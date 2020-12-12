@@ -1,0 +1,24 @@
+{
+    "FeatureName": "Repo",
+    "Reference": "aka.ms/azsktcp/Repo",
+    "IsMaintenanceMode": false,
+    "Controls": [
+        {
+            "ControlID": "ADO_Repo_DP_Inactive_Repo",
+            "Description": "Inactive repositories must be removed if no more required.",
+            "Id": "Repo110",
+            "ControlSeverity": "Medium",
+            "Automated": "Yes",
+            "MethodName": "CheckInactiveRepo",
+            "Rationale": "Each additional repository being accessed by pipelines increases the attack surface. To minimize this risk ensure that only active and legitimate repositories are present in project.",
+            "Recommendation": "To remove inactive repository, follow the steps given here: 1. Navigate to the project settings -> 2. Repositories -> 3. Select the repository and delete.",
+            "Tags": [
+                "SDL",
+                "TCP",
+                "Automated",
+                "DP"
+            ],
+            "Enabled": true
+        }
+    ]
+}

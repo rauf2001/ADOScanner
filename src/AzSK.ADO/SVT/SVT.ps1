@@ -21,7 +21,16 @@ function Get-AzSKADOSecurityStatus
 		Release name for which the security evaluation has to be performed.
 
 	.PARAMETER AgentPoolNames
-	   Agent name for which the security evaluation has to be performed.	
+	   Agent pool name for which the security evaluation has to be performed.	
+	
+	.PARAMETER ServiceConnectionNames
+		Service connection name for which the security evaluation has to be performed
+
+	.PARAMETER VariableGroupNames
+		Variable group name for which the security evaluation has to be performed
+
+	.PARAMETER RepoNames
+		Repo name for which the security evaluation has to be performed
 
 	.PARAMETER DetailedScan
 		Print detailed scan logs for controls.
@@ -82,8 +91,14 @@ function Get-AzSKADOSecurityStatus
 		[Alias("vg", "VariableGroupName", "vgs")]
 		$VariableGroupNames,
 
+		[string]
+		[Parameter(HelpMessage="Repo names for which the security evaluation has to be performed.")]
+		[ValidateNotNullOrEmpty()]
+		[Alias("rp", "RepoName", "rps")]
+		$RepoNames,
+
 		[switch]
-		[Parameter(HelpMessage="Scan all supported artificats present under organization like build, release, projects etc.")]
+		[Parameter(HelpMessage="Scan all supported artifacts present under organization like build, release, projects etc.")]
 		[Alias("saa")]
 		$ScanAllArtifacts,
 
@@ -322,7 +337,7 @@ function Get-AzSKADOSecurityStatus
 				}
 			}
 
-			$resolver = [SVTResourceResolver]::new($OrganizationName,$ProjectNames,$BuildNames,$ReleaseNames,$AgentPoolNames, $ServiceConnectionNames, $VariableGroupNames, $MaxObj, $ScanAllArtifacts, $PATToken,$ResourceTypeName, $AllowLongRunningScan, $ServiceId, $IncludeAdminControls, $SkipOrgUserControls);
+			$resolver = [SVTResourceResolver]::new($OrganizationName,$ProjectNames,$BuildNames,$ReleaseNames,$AgentPoolNames, $ServiceConnectionNames, $VariableGroupNames, $RepoNames, $MaxObj, $ScanAllArtifacts, $PATToken,$ResourceTypeName, $AllowLongRunningScan, $ServiceId, $IncludeAdminControls, $SkipOrgUserControls);
 			$secStatus = [ServicesSecurityStatus]::new($OrganizationName, $PSCmdlet.MyInvocation, $resolver);
 			if ($secStatus) 
 			{	

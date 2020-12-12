@@ -23,6 +23,7 @@ class SVTResourceResolver: AzSKRoot {
     hidden [string[]] $AgentPools = @();
     hidden [string[]] $ServiceConnections = @();
     hidden [string[]] $VariableGroups = @();
+    hidden [string[]] $RepoNames = @();
     hidden [PSObject] $ControlSettings; 
     #Local variable for longrunningscan for command parameter
     [bool] $allowLongRunningScan = $false
@@ -43,14 +44,14 @@ class SVTResourceResolver: AzSKRoot {
     hidden [string[]] $VariableGroupIds = @();
     hidden [bool] $isServiceIdBasedScan = $false;
 
-    SVTResourceResolver([string]$organizationName, $ProjectNames, $BuildNames, $ReleaseNames, $AgentPools, $ServiceConnectionNames, $VariableGroupNames, $MaxObj, $ScanAllArtifacts, $PATToken, $ResourceTypeName, $AllowLongRunningScan, $ServiceId, $IncludeAdminControls, $skipOrgUserControls): Base($organizationName, $PATToken) {
+    SVTResourceResolver([string]$organizationName, $ProjectNames, $BuildNames, $ReleaseNames, $AgentPools, $ServiceConnectionNames, $VariableGroupNames, $RepoNames, $MaxObj, $ScanAllArtifacts, $PATToken, $ResourceTypeName, $AllowLongRunningScan, $ServiceId, $IncludeAdminControls, $skipOrgUserControls): Base($organizationName, $PATToken) {
 
         $this.MaxObjectsToScan = $MaxObj #default = 0 => scan all if "*" specified...
-        $this.SetallTheParamValues($organizationName, $ProjectNames, $BuildNames, $ReleaseNames, $AgentPools, $ServiceConnectionNames, $VariableGroupNames, $ScanAllArtifacts, $PATToken, $ResourceTypeName, $AllowLongRunningScan, $ServiceId, $IncludeAdminControls);            
+        $this.SetallTheParamValues($organizationName, $ProjectNames, $BuildNames, $ReleaseNames, $AgentPools, $ServiceConnectionNames, $VariableGroupNames, $RepoNames, $ScanAllArtifacts, $PATToken, $ResourceTypeName, $AllowLongRunningScan, $ServiceId, $IncludeAdminControls);            
         $this.skipOrgUserControls = $skipOrgUserControls
     }
 
-    [void] SetallTheParamValues([string]$organizationName, $ProjectNames, $BuildNames, $ReleaseNames, $AgentPools, $ServiceConnectionNames, $VariableGroupNames, $ScanAllArtifacts, $PATToken, $ResourceTypeName, $AllowLongRunningScan, $ServiceId, $IncludeAdminControls) { 
+    [void] SetallTheParamValues([string]$organizationName, $ProjectNames, $BuildNames, $ReleaseNames, $AgentPools, $ServiceConnectionNames, $VariableGroupNames, $RepoNames, $ScanAllArtifacts, $PATToken, $ResourceTypeName, $AllowLongRunningScan, $ServiceId, $IncludeAdminControls) { 
         $this.organizationName = $organizationName
         $this.ResourceTypeName = $ResourceTypeName
         $this.allowLongRunningScan = $AllowLongRunningScan
@@ -119,6 +120,15 @@ class SVTResourceResolver: AzSKRoot {
             $this.VariableGroups = "*"
         }
 
+        if (-not [string]::IsNullOrEmpty($RepoNames)) {
+            $this.RepoNames += $this.ConvertToStringArray($RepoNames);
+            if ($this.RepoNames.Count -eq 0) {
+                throw [SuppressedException] "The parameter 'RepoNames' does not contain any string."
+            }
+        }
+        elseif ($ResourceTypeName -eq [ResourceTypeName]::Repo) {
+            $this.RepoNames = "*"
+        }
         if (-not [string]::IsNullOrEmpty($ServiceId)) {
             $this.serviceId += $this.ConvertToStringArray($ServiceId);
             if ($this.serviceId.Count -eq 0) {
@@ -141,9 +151,10 @@ class SVTResourceResolver: AzSKRoot {
             $this.AgentPools = "*"
             $this.ServiceConnections = "*"
             $this.VariableGroups = "*"
+            $this.RepoNames = "*"
         }  
 
-        if (( $this.MaxObjectsToScan -eq 0 -or $this.MaxObjectsToScan -gt $this.longRunningScanCheckPoint) -and ($this.ProjectNames -eq "*" -or $this.BuildNames -eq "*" -or $this.ReleaseNames -eq "*" -or $this.ServiceConnections -eq "*" -or $this.AgentPools -eq "*" -or $this.VariableGroups -eq "*")) {            
+        if (( $this.MaxObjectsToScan -eq 0 -or $this.MaxObjectsToScan -gt $this.longRunningScanCheckPoint) -and ($this.ProjectNames -eq "*" -or $this.BuildNames -eq "*" -or $this.ReleaseNames -eq "*" -or $this.ServiceConnections -eq "*" -or $this.AgentPools -eq "*" -or $this.VariableGroups -eq "*" -or $this.RepoNames -eq "*")) {            
             $this.PublishCustomMessage("Using '*' can take a long time for the scan to complete in larger projects. `nYou may want to provide a comma-separated list of projects, builds, releases, service connections, agent pools and variable groups. `n ", [MessageType]::Warning);
             <# BUGBUG: [Aug-2020] Removing this until we can determine the right approach to init org-policy-url for ADO.
             if (!$this.ControlSettings) {
@@ -541,7 +552,46 @@ class SVTResourceResolver: AzSKRoot {
                     if(!$this.isAllowLongRunningScanCheck())
                     {
                         return;
-                    }                    
+                    }        
+                    # repos
+                    if ($this.RepoNames.Count -gt 0 -and ($this.ResourceTypeName -in ([ResourceTypeName]::Repo, [ResourceTypeName]::All))) {
+                        if ($this.ProjectNames -ne "*") {
+                            $this.PublishCustomMessage("Getting repos configurations...");
+                        }
+                        
+                        if ($this.RepoNames -eq "*") {
+                            $repoDefnURL = ("https://dev.azure.com/$($this.organizationName)/$($projectName)/_apis/git/repositories?api-version=6.0")
+                            $repoDefnsObj = [WebRequestHelper]::InvokeGetWebRequest($repoDefnURL) 
+                            if (([Helpers]::CheckMember($repoDefnsObj, "count") -and $repoDefnsObj[0].count -gt 0) -or (($repoDefnsObj | Measure-Object).Count -gt 0 -and [Helpers]::CheckMember($repoDefnsObj[0], "name"))) {
+                                $nObj = $this.MaxObjectsToScan
+                                foreach ($repo in $repoDefnsObj) {
+                                    $link = $repo.webUrl;
+                                    $repoResourceId = "organization/$organizationId/project/$projectId/repo/$($repo.id)";
+                                    $this.AddSVTResource($repo.name, $projectName, "ADO.Repo", $repoResourceId, $repo, $link);
+
+                                    if (--$nObj -eq 0) { break; } 
+                                }
+                                $repoDefnsObj = $null;
+                                Remove-Variable repoDefnsObj;
+                            }
+                        }
+                        else {
+                            $this.RepoNames | ForEach-Object {
+                                $repoName = $_
+                                $repoURL = "https://dev.azure.com/$($this.organizationName)/$($projectName)/_apis/git/repositories/$($repoName)?api-version=6.0"
+                                $repo = [WebRequestHelper]::InvokeGetWebRequest($repoURL) 
+                                $link = $repo.webUrl;
+                                $repoResourceId = "organization/$organizationId/project/$projectId/repo/$($repo.id)";
+                                $this.AddSVTResource($repo.name, $projectName, "ADO.Repo", $repoResourceId, $repo, $link);
+                            }
+                        }
+
+                    }
+                    #check if long running scan allowed or not.
+                    if(!$this.isAllowLongRunningScanCheck())
+                    {
+                        return;
+                    }  
                     if (--$nProj -eq 0) { break; } #nProj is set to MaxObj before loop.
                     
                 }
